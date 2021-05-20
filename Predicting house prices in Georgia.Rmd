@@ -1,0 +1,220 @@
+---
+title: "R markdown"
+output: html_document
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readr)
+library(tidyverse)
+library(gridExtra)
+library(corrplot)
+library(modelr)
+```
+
+## Prediction of house prices
+### Intoduction
+In this project, the concept of data analysis to predict the house price of Georgia house retail site is used. The house price is one of the sectors that is fundamental in the field of real estate. Real estate agencies always try to value the house according to the age, locations and several factors. In this project, different techniques were used to get insights about the price of the house.
+Before cleaning the data, it is necessary to explore it.
+
+### Data
+The data used in this project was obtained from Kaggle website (https://www.kaggle.com/tornikeonoprishvili/tbilisi-housing-challenge-2020). The site contains two data sets that will need to be combined. To gain insight on the data and perform analyses, the libraries of dplyr, tidyr, ggplot, and modelr were used. These libraries will help determine influential variables on house prices. 
+
+### Data processing
+```{r}
+# loading data using readr
+data1= readr::read_csv('housing_clean_1.csv')
+data2=readr::read_csv('housing_clean_2.csv')
+head(data1)
+head(data2)
+```
+
+## Joining the data 
+
+```{r}
+#####***********Transform data using dplyr**********##########
+
+# joining data1 and data2 using dplyr
+df= left_join(data1, data2, by= c("X1" = "X1", 'price'='price','space'='space',
+                                  'room'='room','bedroom'='bedroom','furniture'='furniture',
+                                  'latitude'='latitude','longitude'='longitude'))
+
+# drop X1 variable in df
+df= df%>%
+  select(-c(X1, latitude, longitude))
+# obtain the dimension of the data
+dim_desc(df)
+# select the numeric variables in data
+ch_data=select_if(df, is.character)
+character=select_if(df, is.character)
+num_data= select_if(df, is.numeric)    
+```
+```{r}
+# remove outliers
+outliers <- boxplot(df$price, plot=FALSE)$out
+head(outliers)
+length(outliers)
+df1<- df[-which(df$price %in% outliers),]
+```
+The price variables had 2013 outliers. The outliers were removed from the data
+
+```{r}
+# 1. Obtain the top 10 most expensive houses using dplyr
+top10=head(df%>%
+  arrange(desc(price)),10)
+top10
+```
+The data above shows that the top city areas that had the highest house prices was Mtatsminda District, Saburtalo District, Other cities and Vake District. Mtatsminda had the most expensive house. 
+```{r}
+# get the number of mising values per column
+colSums(sapply(df, is.na))
+sum(is.na(df))
+# drop the rows with the missing values
+df=na.omit(df)
+
+```
+
+The results above shows that "city area" had 5 missing values, "floor' had 5 missing values, "apartment type" had 15 missing values, "renovation type and balcony" had 5 missing values. The total number of missing values was 40. The missing values were handled by dropping the rows with missing values. 
+```{r}
+# convert the variables to categorical
+df$city_area=as.factor(df$city_area)
+df$apartment_type=as.factor(df$apartment_type)
+df$renovation_type=as.factor(df$renovation_type)
+```
+
+```{r}
+# data visualization using ggplot
+plotHist <- function(data_in, i) {
+  data <- data.frame(x=data_in[[i]])
+  p <- ggplot(data=df, aes(x=factor(x))) + stat_count() + xlab(colnames(data_in)[i]) + theme_light() + 
+    theme(axis.text.x = element_text(angle = 90, hjust =1))
+  return (p)
+}
+
+doPlots <- function(data_in, fun, ii, ncol=3) {
+  pp <- list()
+  for (i in ii) {
+    p <- fun(data_in=data_in, i=i)
+    pp <- c(pp, list(p))
+  }
+  do.call("grid.arrange", c(pp, ncol=ncol))
+}
+plotDen <- function(data_in, i){
+  data <- data.frame(x=data_in[[i]], SalePrice = df$price)
+  p <- ggplot(data= df) + geom_line(aes(x = x), stat = 'density', size = 1,alpha = 1.0) +
+    xlab(paste0((colnames(data_in)[i]), '\n', 'Skewness: ',round(skewness(data_in[[i]], na.rm = TRUE), 2))) + theme_light() 
+  return(p)
+}
+names(character)
+str(character)
+character$city_area=as.factor(character$city_area)
+character$apartment_type=as.factor(character$apartment_type)
+character$renovation_type=as.factor(character$renovation_type)
+```
+
+```{r}
+# top 10 price
+top_cities = df %>% group_by(city_area) %>% 
+  summarise(Count = n()) %>% 
+  arrange(desc(Count)) %>% top_n(20)
+ggplot(data=top_cities,aes(x=city_area,y=Count,fill=Count)) +
+  geom_bar(colour='black',stat='identity') + 
+  theme_bw() +
+  ggtitle('Top 20 Cities') + 
+  theme(axis.text.x = element_text(angle=45,hjust=1),
+        plot.title = element_text(hjust=0.5)) + 
+  scale_fill_distiller(palette = 'RdYlBu') + 
+  coord_flip() ## coordinate flip bar == > barh
+```
+The graph shows that majority of the houses were from Saburtalo District, followed by Vake District, followed by Other cities and Dibude District. 
+
+```{r}
+mean_ciy=df%>%
+  select(price, city_area)%>%
+  group_by(city_area)%>%
+  summarise(mean= mean(price))%>%
+  arrange(desc(mean))
+mean_ciy
+ggplot(data=mean_ciy,aes(x=city_area,y=mean,fill=mean)) +
+  geom_bar(colour='black',stat='identity') + 
+  theme_bw() +
+  ggtitle('Average house price per city') + 
+  theme(axis.text.x = element_text(angle=45,hjust=1),
+        plot.title = element_text(hjust=0.5)) + 
+  scale_fill_distiller(palette = 'RdYlBu') + 
+  coord_flip() ## coordinate flip bar == > barh
+```
+
+The average price of the house in Mtatsminda District was $697572.7. The average house price of Vake District was $435662.7.The average house price of Chugureti District was 283147.The average house price of Krtsanisi District was $278110.7. The average house price of Saburtalo District was 275428. The average house price of Other District was $248172.4. The average house price of Dibude District was $213242.4. The average house price of Isani District was $199591.4. The average house price of Nadzaladevi District was $166551.7 and the average house price of Gidani District was $140905.1. 
+```{r}
+countdf=df %>% 
+  select(apartment_type, city_area, price) %>% 
+  arrange(city_area) %>% 
+  group_by(city_area, apartment_type) %>% 
+  summarize(Count = n())
+countdf
+df %>% 
+  select(apartment_type, city_area, price) %>% 
+  arrange(city_area) %>% 
+  group_by(city_area, apartment_type) %>% 
+  summarize(Count = n()) %>% 
+  ggplot(aes(city_area, Count)) + 
+  geom_bar(aes(fill = apartment_type), 
+           position = 'dodge', 
+           stat = 'identity') + theme_light() +
+  theme(axis.text.x = element_text(angle = 90, hjust =1))
+```
+
+
+The results show the following trend in expensiveness. In the following districts, new apartments were most expensive: Vake, Saburtulo, Nadzaledvi, Mtatsminda, Krtsanisi, Isani, Gidani, and Didube. In two disctricts, Samgori and Chuguretti, old apartments were found to be most expensive. Generally speaking, new house are new apartments. 
+
+```{r}
+# distribution of the house price for the cities
+df1 %>% 
+  select(city_area, price) %>% 
+  ggplot(aes(factor(city_area), price)) + 
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, hjust =1)) + 
+  xlab('city area')
+```
+
+Mtatsminda District had the highest median house price, followed by Vake District. Samgori District had the lowest median house price. 
+
+```{r}
+df1 %>% 
+  select(renovation_type, price) %>% 
+  ggplot(aes(factor(renovation_type),price)) + 
+  geom_boxplot() + xlab('Overall Condition')
+```
+
+The figure above shows that the newly renovated house were the most expensive, followed by the white frame while the houses that had the lowest price were black framed house. 
+
+### Scatterplot 
+```{r}
+plotCorr <- function(data_in, i){
+  data <- data.frame(x = data_in[[i]], price = data_in$price)
+  p <- ggplot(data, aes(x = x, y = price)) + geom_point(shape = 1, na.rm = TRUE) + geom_smooth(method = lm ) + xlab(paste0(colnames(data_in)[i], '\n', 'R-Squared: ', round(cor(data_in[[i]], data$price, use = 'complete.obs'), 2))) + theme_light()
+  return(suppressWarnings(p))
+}
+
+
+doPlots(num_data, fun = plotCorr, ii = 1:8)
+```
+
+The scatter plot above shows that the relationship between price and space was weak. The space explained 9% variation of the price of the house. The relationship between price and room was weak. The room explained 6% variation of the price of the house.The relationship between price and bedroom was weak. The number of bedroom explained 5% variation of th price of the house. The relationship between price and furniture was weak. The furniture explained 5% variation of th price of the house. The floor, maximum number of floor and balcony explained 0% variation of the price of the house.
+
+```{r}
+mod <- lm(price ~., data = df1)
+summary(mod)
+rmse(mod, df1)
+rsquare(mod, df1)
+mae(mod, df1)
+qae(mod, df1)
+
+
+```
+The result from the regression showed that the independent variables had a significant influence on the price of the house. The value of R-squared  score i.e. 73.5 %. This means that the independent variables explained 73.5 % variation of the price of the house. 
+
+## Conclusion
+The most expensive dwellings are newly built or renovated apartments or houses. The ones that are Mtatsminda District on average have higher dwelling prices than the other districts. Even though, independently, independent variables explained a relatively low amount of the variance. However, taken all together, they explain 73,5% of the variance. 
